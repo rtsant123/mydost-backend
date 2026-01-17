@@ -11,7 +11,7 @@ export const supportedLanguages = [
   "mzo"
 ] as const;
 
-export const interests = ["sports", "teer", "astrology"] as const;
+export const interests = ["sports", "teer", "astrology", "dost"] as const;
 
 export const responseStyles = ["short", "balanced", "detailed"] as const;
 
@@ -62,7 +62,7 @@ export const chatMessageSchema = z.object({
 });
 
 export const chatStartSchema = z.object({
-  topic: z.enum(["sports", "teer", "astrology"]),
+  topic: z.enum(["sports", "teer", "astrology", "dost"]),
   refId: z.string().optional()
 });
 

@@ -37,7 +37,7 @@ export type CardResponse = {
   disclaimer: string;
 };
 
-export type ChatTopic = "sports" | "teer" | "astrology";
+export type ChatTopic = "sports" | "teer" | "astrology" | "dost";
 
 export type MatchStatus = "scheduled" | "live" | "finished";
 
