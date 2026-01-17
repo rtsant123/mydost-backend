@@ -9,6 +9,18 @@ import { planConfig } from "../services/plans";
 export const registerChatRoutes = (app: FastifyInstance) => {
   const llmProvider = createClaudeProvider(app.env.CLAUDE_API_KEY);
   const searchProvider = createSearchProvider();
+  const memoryTtlSeconds = 60 * 60 * 24 * 7;
+  const memoryMaxItems = 12;
+
+  const extractCardText = (cards: Array<{ title?: string; content?: string; bullets?: string[] }>) => {
+    const parts: string[] = [];
+    for (const card of cards) {
+      if (card.title) parts.push(card.title);
+      if (card.content) parts.push(card.content);
+      if (card.bullets?.length) parts.push(...card.bullets);
+    }
+    return parts.map((item) => item.trim()).filter(Boolean).join("\n");
+  };
 
   app.get("/api/chat/stream", async (request, reply) => {
     const query = request.query as { q?: string; topic?: string; matchId?: string; language?: string };
@@ -124,6 +136,18 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     });
 
     const contextChunks: string[] = [];
+    const memoryKey = `memory:${payload.sub}:${session.topic}`;
+    const memoryRaw = await app.redis.get(memoryKey);
+    if (memoryRaw) {
+      try {
+        const memoryItems = JSON.parse(memoryRaw) as string[];
+        if (memoryItems.length) {
+          contextChunks.push(`Memory:\n${memoryItems.join("\n")}`);
+        }
+      } catch (error) {
+        // ignore corrupted memory
+      }
+    }
 
     if (session.topic === "sports" && session.refId) {
       const brief = await cacheGetJson(app.redis, `match:brief:${session.refId}:current`);
@@ -182,6 +206,21 @@ export const registerChatRoutes = (app: FastifyInstance) => {
         tokenEstimate: JSON.stringify(cardResponse).length
       }
     });
+
+    const assistantText = extractCardText(cardResponse.cards as any);
+    const memoryUpdate = [`user: ${parsed.data.message}`, `assistant: ${assistantText}`];
+    if (memoryUpdate.length) {
+      let existing: string[] = [];
+      if (memoryRaw) {
+        try {
+          existing = JSON.parse(memoryRaw) as string[];
+        } catch (error) {
+          existing = [];
+        }
+      }
+      const next = [...existing, ...memoryUpdate].slice(-memoryMaxItems);
+      await app.redis.set(memoryKey, JSON.stringify(next), "EX", memoryTtlSeconds);
+    }
 
     const metric = await incrementUsage(payload.sub);
     await app.redis.set(`usage:${payload.sub}:${metric.dateKey}`, JSON.stringify(metric), "EX", 60 * 60 * 24);
