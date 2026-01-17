@@ -49,10 +49,15 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     const validated = cardResponseSchema.safeParse(response);
     const cardResponse = validated.success ? validated.data : defaultCardResponse(llmInput.language);
 
+    const origin = request.headers.origin ?? "*";
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      Connection: "keep-alive"
+      Connection: "keep-alive",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type",
+      Vary: "Origin"
     });
     reply.raw.write(`data: ${JSON.stringify({ card: cardResponse })}\n\n`);
     reply.raw.write("data: {\"done\":true}\n\n");
