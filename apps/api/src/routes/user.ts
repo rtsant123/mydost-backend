@@ -19,16 +19,21 @@ export const registerUserRoutes = (app: FastifyInstance) => {
   });
 
   app.post("/api/prefs", async (request, reply) => {
+    let payload: { sub: string } | null = null;
     try {
       await request.jwtVerify();
+      payload = request.user as { sub: string };
     } catch (error) {
-      return reply.status(401).send({ error: "Unauthorized" });
+      payload = null;
     }
 
-    const payload = request.user as { sub: string };
     const parsed = userPrefsSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() });
+    }
+
+    if (!payload) {
+      return reply.send({ prefs: parsed.data, persisted: false });
     }
 
     const prefs = await prisma.userPrefs.upsert({

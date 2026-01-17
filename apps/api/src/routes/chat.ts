@@ -10,6 +10,55 @@ export const registerChatRoutes = (app: FastifyInstance) => {
   const llmProvider = createClaudeProvider(app.env.CLAUDE_API_KEY);
   const searchProvider = createSearchProvider();
 
+  app.get("/api/chat/stream", async (request, reply) => {
+    const query = request.query as { q?: string; topic?: string; matchId?: string; language?: string };
+    const userMessage = query.q?.trim();
+    if (!userMessage) {
+      return reply.status(400).send({ error: "Missing q" });
+    }
+
+    const contextChunks: string[] = [];
+    const topic = query.topic ?? "general";
+
+    if (topic === "sports" && query.matchId) {
+      const brief = await cacheGetJson(app.redis, `match:brief:${query.matchId}:current`);
+      if (brief) contextChunks.push(`Match brief: ${JSON.stringify(brief)}`);
+      const recap = await cacheGetJson(app.redis, `match:recap:${query.matchId}:current`);
+      if (recap) contextChunks.push(`Match recap: ${JSON.stringify(recap)}`);
+    }
+
+    if (topic === "teer" && query.matchId) {
+      const summary = await cacheGetJson(app.redis, `teer:summary:${query.matchId}:30`);
+      if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
+    }
+
+    const ragSnippets = await searchProvider.search(userMessage);
+    if (ragSnippets.length) {
+      contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
+    }
+
+    const llmInput = {
+      userMessage,
+      language: (query.language as any) ?? "hinglish",
+      context: contextChunks.join("\n\n"),
+      maxTokens: 350,
+      responseStyle: "short"
+    };
+
+    const response = await llmProvider.generateCards(llmInput);
+    const validated = cardResponseSchema.safeParse(response);
+    const cardResponse = validated.success ? validated.data : defaultCardResponse(llmInput.language);
+
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive"
+    });
+    reply.raw.write(`data: ${JSON.stringify({ card: cardResponse })}\n\n`);
+    reply.raw.write("data: {\"done\":true}\n\n");
+    reply.raw.end();
+  });
+
   app.post("/api/chat/start", async (request, reply) => {
     try {
       await request.jwtVerify();
