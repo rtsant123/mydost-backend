@@ -24,6 +24,18 @@ export const createClaudeProvider = (apiKey?: string): LLMProvider => {
     };
   }
 
+  const toFallbackCard = (text: string, language: SupportedLanguage) => ({
+    cards: [
+      {
+        type: "answer" as const,
+        title: "Response",
+        confidence: 60,
+        bullets: [text.trim() || "No response text returned."]
+      }
+    ],
+    disclaimer: defaultCardResponse(language).disclaimer
+  });
+
   return {
     generateCards: async (input) => {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -52,12 +64,29 @@ export const createClaudeProvider = (apiKey?: string): LLMProvider => {
 
       const payload = (await response.json()) as { content?: Array<{ type: string; text: string }> };
       const text = payload.content?.find((item) => item.type === "text")?.text ?? "";
-      const parsed = JSON.parse(text);
-      const validated = cardResponseSchema.safeParse(parsed);
-      if (!validated.success) {
-        return defaultCardResponse(input.language);
+      try {
+        const parsed = JSON.parse(text);
+        const validated = cardResponseSchema.safeParse(parsed);
+        if (validated.success) {
+          return validated.data;
+        }
+      } catch (error) {
+        const start = text.indexOf("{");
+        const end = text.lastIndexOf("}");
+        if (start !== -1 && end !== -1 && end > start) {
+          const sliced = text.slice(start, end + 1);
+          try {
+            const parsed = JSON.parse(sliced);
+            const validated = cardResponseSchema.safeParse(parsed);
+            if (validated.success) {
+              return validated.data;
+            }
+          } catch (innerError) {
+            // fall through to fallback card
+          }
+        }
       }
-      return validated.data;
+      return toFallbackCard(text, input.language);
     }
   };
 };
