@@ -3,6 +3,7 @@ import { buildServer } from "./server";
 const start = async () => {
   const app = buildServer();
   const port = app.env.PORT;
+  app.log.info({ claudeKeyPresent: Boolean(app.env.CLAUDE_API_KEY) }, "Claude key presence");
 
   try {
     await app.listen({ port, host: "0.0.0.0" });
