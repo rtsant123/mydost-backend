@@ -6,10 +6,12 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w apps/api && npm run build -w apps/worker",
+    "build": "npm run prisma:generate && npm run build -w apps/api && npm run build -w apps/worker",
     "dev": "npm run dev -w apps/api",
     "dev:worker": "npm run dev -w apps/worker",
     "lint": "npm run lint -w apps/api && npm run lint -w apps/worker",
+    "start": "npm run start -w apps/api",
+    "start:worker": "npm run start -w apps/worker",
     "test": "npm run test -w apps/api",
     "prisma:generate": "npm run prisma:generate -w packages/db",
     "prisma:migrate": "npm run prisma:migrate -w packages/db"
