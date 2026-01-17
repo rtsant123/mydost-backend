@@ -59,7 +59,10 @@ export const buildServer = () => {
     }
   });
 
-  app.get("/api/health", async () => ({ status: "ok" }));
+  app.get("/api/health", async () => ({
+    status: "ok",
+    claudeKeyPresent: Boolean(env.CLAUDE_API_KEY)
+  }));
 
   registerAuthRoutes(app);
   registerUserRoutes(app);
