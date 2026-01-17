@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  free
+  starter
+  pro
+}
+
+enum MatchStatus {
+  scheduled
+  live
+  finished
+}
+
+enum VoteChoice {
+  A
+  D
+  B
+}
+
+enum ChatRole {
+  user
+  assistant
+  system
+}
+
+enum ChatTopic {
+  sports
+  teer
+  astrology
+}
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  name          String?
+  plan          PlanTier   @default(free)
+  createdAt     DateTime   @default(now())
+  lastActiveAt  DateTime?
+  prefs         UserPrefs?
+  sessions      ChatSession[]
+  votes         Vote[]
+}
+
+model UserPrefs {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  language       String
+  interestsJson  Json
+  favoritesJson  Json?
+  responseStyle  String   @default("short")
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+}
+
+model Match {
+  id         String       @id @default(uuid())
+  sport      String
+  league     String
+  teamA      String
+  teamB      String
+  startTime  DateTime
+  status     MatchStatus  @default(scheduled)
+  createdAt  DateTime     @default(now())
+  briefs     MatchBrief[]
+  recaps     MatchRecap[]
+  votes      Vote[]
+  aggregates VoteAggregate?
+}
+
+model MatchBrief {
+  id          String   @id @default(uuid())
+  matchId     String
+  version     Int
+  generatedAt DateTime @default(now())
+  expiresAt   DateTime
+  sourcesJson Json
+  briefJson   Json
+  embedding   Unsupported("vector")?
+  match       Match    @relation(fields: [matchId], references: [id])
+
+  @@unique([matchId, version])
+}
+
+model MatchRecap {
+  id          String   @id @default(uuid())
+  matchId     String
+  generatedAt DateTime @default(now())
+  sourcesJson Json
+  recapJson   Json
+  embedding   Unsupported("vector")?
+  match       Match    @relation(fields: [matchId], references: [id])
+}
+
+model Vote {
+  id        String     @id @default(uuid())
+  matchId   String
+  userId    String
+  choice    VoteChoice
+  createdAt DateTime   @default(now())
+  match     Match      @relation(fields: [matchId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+
+  @@unique([matchId, userId])
+}
+
+model VoteAggregate {
+  id         String   @id @default(uuid())
+  matchId    String   @unique
+  aPct       Float
+  dPct       Float
+  bPct       Float
+  totalVotes Int
+  updatedAt  DateTime @updatedAt
+  match      Match    @relation(fields: [matchId], references: [id])
+}
+
+model TeerResult {
+  id        String   @id @default(uuid())
+  house     String
+  date      DateTime
+  r1        Int
+  r2        Int
+  source    String
+  createdAt DateTime @default(now())
+
+  @@unique([house, date])
+}
+
+model TeerSummary {
+  id          String   @id @default(uuid())
+  house       String
+  windowDays  Int
+  generatedAt DateTime @default(now())
+  summaryJson Json
+  embedding   Unsupported("vector")?
+
+  @@unique([house, windowDays])
+}
+
+model ChatSession {
+  id        String     @id @default(uuid())
+  userId    String
+  topic     ChatTopic
+  refId     String?
+  createdAt DateTime   @default(now())
+  messages  ChatMessage[]
+  user      User       @relation(fields: [userId], references: [id])
+}
+
+model ChatMessage {
+  id            String   @id @default(uuid())
+  sessionId     String
+  role          ChatRole
+  content       String
+  cardsJson     Json?
+  createdAt     DateTime @default(now())
+  tokenEstimate Int
+  session       ChatSession @relation(fields: [sessionId], references: [id])
+}
+
+model UsageMetric {
+  id           String   @id @default(uuid())
+  userId       String
+  dateKey      String
+  messageCount Int      @default(0)
+  lastMessageAt DateTime?
+
+  @@unique([userId, dateKey])
+}
