@@ -44,7 +44,10 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
     }
 
-    const ragSnippets = await searchProvider.search(userMessage);
+    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today)\b/i.test(
+      userMessage
+    );
+    const ragSnippets = isSportsQuery ? await searchProvider.search(userMessage) : [];
     if (ragSnippets.length) {
       contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
     }
@@ -161,7 +164,10 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
     }
 
-    const ragSnippets = await searchProvider.search(parsed.data.message);
+    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today)\b/i.test(
+      parsed.data.message
+    );
+    const ragSnippets = isSportsQuery ? await searchProvider.search(parsed.data.message) : [];
     if (ragSnippets.length) {
       contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
     }
