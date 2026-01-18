@@ -1,0 +1,1 @@
+ALTER TYPE "ChatTopic" ADD VALUE IF NOT EXISTS 'markets';

@@ -25,7 +25,7 @@ export const fetchCryptoSnapshot = async (redis: Redis, env: Env): Promise<Crypt
   const cached = await cacheGetJson<CryptoRow[]>(redis, cacheKey);
   if (cached) return cached;
 
-  const endpoint = currency === "USD" ? "getData" : "getDataCurrency";
+  const endpoint = "getDataCurrency";
   const results: CryptoRow[] = [];
 
   for (const symbol of symbols) {
