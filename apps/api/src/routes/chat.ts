@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "@mydost/db";
 import { chatMessageSchema, chatStartSchema, cardResponseSchema, defaultCardResponse } from "@mydost/shared";
 import { createClaudeProvider, createSearchProvider } from "../services/llm";
+import { buildMarketsContext } from "../services/markets";
 import { cacheGetJson } from "../services/cache";
 import { incrementUsage, getUsage } from "../services/usage";
 import { planConfig } from "../services/plans";
@@ -97,6 +98,14 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     }
 
     await maybeAddMatchList(userMessage, contextChunks);
+
+    const isMarketsQuery = /\b(market|markets|stock|stocks|share|nse|bse|sensex|nifty|crypto|bitcoin|btc|eth|solana|price)\b/i.test(
+      userMessage
+    );
+    if (topic === "markets" || isMarketsQuery) {
+      const marketsContext = await buildMarketsContext(app.redis, app.env);
+      if (marketsContext) contextChunks.push(marketsContext);
+    }
 
     const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow)\b/i.test(
       userMessage
@@ -219,6 +228,14 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     }
 
     await maybeAddMatchList(parsed.data.message, contextChunks);
+
+    const isMarketsQuery = /\b(market|markets|stock|stocks|share|nse|bse|sensex|nifty|crypto|bitcoin|btc|eth|solana|price)\b/i.test(
+      parsed.data.message
+    );
+    if (session.topic === "markets" || isMarketsQuery) {
+      const marketsContext = await buildMarketsContext(app.redis, app.env);
+      if (marketsContext) contextChunks.push(marketsContext);
+    }
 
     const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow)\b/i.test(
       parsed.data.message

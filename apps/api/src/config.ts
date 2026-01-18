@@ -10,6 +10,9 @@ const envSchema = z.object({
   ADMIN_EMAILS: z.string().default(""),
   CLAUDE_API_KEY: z.string().optional(),
   SERPER_API_KEY: z.string().optional(),
+  ALPHA_VANTAGE_API_KEY: z.string().optional(),
+  MARKET_STOCK_SYMBOLS: z.string().default("RELIANCE.BSE,TCS.BSE,INFY.BSE,HDFCBANK.BSE"),
+  MARKET_CRYPTO_IDS: z.string().default("bitcoin,ethereum,solana"),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   RATE_LIMIT_TOKENS_PER_MINUTE: z.coerce.number().default(30),
   RATE_LIMIT_BUCKET_SIZE: z.coerce.number().default(60)

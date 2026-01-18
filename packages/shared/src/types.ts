@@ -8,7 +8,7 @@ export type SupportedLanguage =
   | "mni"
   | "mzo";
 
-export type Interest = "sports" | "teer" | "astrology";
+export type Interest = "sports" | "teer" | "astrology" | "markets";
 
 export type ResponseStyle = "short" | "balanced" | "detailed";
 
@@ -37,7 +37,7 @@ export type CardResponse = {
   disclaimer: string;
 };
 
-export type ChatTopic = "sports" | "teer" | "astrology" | "dost";
+export type ChatTopic = "sports" | "teer" | "astrology" | "markets" | "dost";
 
 export type MatchStatus = "scheduled" | "live" | "finished";
 
