@@ -16,10 +16,22 @@ const matchCreateSchema = z.object({
 const matchQuerySchema = z.object({
   sport: z.string().optional(),
   status: z.string().optional(),
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
   includeVotes: z.coerce.boolean().optional()
 });
+
+const parseDateParam = (value: string, endOfDay: boolean) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const suffix = endOfDay ? "T23:59:59+05:30" : "T00:00:00+05:30";
+    const parsed = new Date(`${trimmed}${suffix}`);
+    return Number.isNaN(parsed.valueOf()) ? null : parsed;
+  }
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.valueOf()) ? null : parsed;
+};
 
 export const registerMatchRoutes = (app: FastifyInstance) => {
   app.get("/api/matches", async (request, reply) => {
@@ -28,11 +40,19 @@ export const registerMatchRoutes = (app: FastifyInstance) => {
       return reply.status(400).send({ error: parsed.error.flatten() });
     }
     const query = parsed.data;
+    const fromDate = query.from ? parseDateParam(query.from, false) : null;
+    const toDate = query.to ? parseDateParam(query.to, true) : null;
+    if (query.from && !fromDate) {
+      return reply.status(400).send({ error: { formErrors: [], fieldErrors: { from: ["Invalid datetime"] } } });
+    }
+    if (query.to && !toDate) {
+      return reply.status(400).send({ error: { formErrors: [], fieldErrors: { to: ["Invalid datetime"] } } });
+    }
     const startTime =
-      query.from || query.to
+      fromDate || toDate
         ? {
-            ...(query.from ? { gte: new Date(query.from) } : {}),
-            ...(query.to ? { lte: new Date(query.to) } : {})
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(toDate ? { lte: toDate } : {})
           }
         : undefined;
     const matches = await prisma.match.findMany({
