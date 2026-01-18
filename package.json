@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run prisma:generate && npm run build -w packages/db && npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/worker",
+    "build": "npm run prisma:generate && npm run prisma:migrate && npm run build -w packages/db && npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/worker",
     "dev": "npm run dev -w apps/api",
     "dev:worker": "npm run dev -w apps/worker",
     "lint": "npm run lint -w apps/api && npm run lint -w apps/worker",
