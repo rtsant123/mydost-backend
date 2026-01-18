@@ -1,6 +1,3 @@
--- Extensions
-CREATE EXTENSION IF NOT EXISTS vector;
-
 -- CreateEnum
 CREATE TYPE "PlanTier" AS ENUM ('free', 'starter', 'pro');
 
@@ -72,7 +69,6 @@ CREATE TABLE "MatchBrief" (
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "sourcesJson" JSONB NOT NULL,
     "briefJson" JSONB NOT NULL,
-    "embedding" vector,
 
     CONSTRAINT "MatchBrief_pkey" PRIMARY KEY ("id")
 );
@@ -84,7 +80,6 @@ CREATE TABLE "MatchRecap" (
     "generatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "sourcesJson" JSONB NOT NULL,
     "recapJson" JSONB NOT NULL,
-    "embedding" vector,
 
     CONSTRAINT "MatchRecap_pkey" PRIMARY KEY ("id")
 );
@@ -133,7 +128,6 @@ CREATE TABLE "TeerSummary" (
     "windowDays" INTEGER NOT NULL,
     "generatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "summaryJson" JSONB NOT NULL,
-    "embedding" vector,
 
     CONSTRAINT "TeerSummary_pkey" PRIMARY KEY ("id")
 );

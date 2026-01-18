@@ -94,7 +94,6 @@ model MatchBrief {
   expiresAt   DateTime
   sourcesJson Json
   briefJson   Json
-  embedding   Unsupported("vector")?
   match       Match    @relation(fields: [matchId], references: [id])
 
   @@unique([matchId, version])
@@ -106,7 +105,6 @@ model MatchRecap {
   generatedAt DateTime @default(now())
   sourcesJson Json
   recapJson   Json
-  embedding   Unsupported("vector")?
   match       Match    @relation(fields: [matchId], references: [id])
 }
 
@@ -151,7 +149,6 @@ model TeerSummary {
   windowDays  Int
   generatedAt DateTime @default(now())
   summaryJson Json
-  embedding   Unsupported("vector")?
 
   @@unique([house, windowDays])
 }
