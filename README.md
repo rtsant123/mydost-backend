@@ -80,7 +80,6 @@ The worker uses cron schedules internally:
 | `ALPHA_VANTAGE_API_KEY` | Alpha Vantage API key for stock quotes (markets) |
 | `MARKET_STOCK_SYMBOLS` | Comma-separated stock symbols (India defaults) |
 | `MARKET_CRYPTO_SYMBOLS` | FreeCryptoAPI symbols (BTC, ETH, etc.) |
-| `MARKET_CRYPTO_CURRENCY` | Crypto pricing currency (default INR) |
 | `FREECRYPTO_API_KEY` | FreeCryptoAPI key for crypto prices |
 | `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook secret (optional) |
 | `RATE_LIMIT_TOKENS_PER_MINUTE` | Per-user token bucket refill rate |

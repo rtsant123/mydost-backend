@@ -20,7 +20,7 @@ export const fetchCryptoSnapshot = async (redis: Redis, env: Env): Promise<Crypt
   if (!apiKey) return [];
 
   const symbols = parseList(env.MARKET_CRYPTO_SYMBOLS).map((symbol) => symbol.toUpperCase());
-  const currency = env.MARKET_CRYPTO_CURRENCY.toUpperCase();
+  const currency = "INR";
   const cacheKey = cryptoSymbolsKey(symbols, currency);
   const cached = await cacheGetJson<CryptoRow[]>(redis, cacheKey);
   if (cached) return cached;
@@ -93,15 +93,12 @@ export const fetchStockSnapshot = async (redis: Redis, env: Env): Promise<StockR
 };
 
 export const buildMarketsContext = async (redis: Redis, env: Env) => {
-  const [crypto, stocks] = await Promise.all([
-    fetchCryptoSnapshot(redis, env),
-    fetchStockSnapshot(redis, env)
-  ]);
+  const [crypto, stocks] = await Promise.all([fetchCryptoSnapshot(redis, env), fetchStockSnapshot(redis, env)]);
 
   const lines: string[] = [];
   if (crypto.length) {
-    const currency = env.MARKET_CRYPTO_CURRENCY.toUpperCase();
-    const prefix = currency === "INR" ? "₹" : `${currency} `;
+    const currency = "INR";
+    const prefix = "₹";
     lines.push(
       `Crypto (${currency}):`,
       ...crypto.map(
