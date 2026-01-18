@@ -1,6 +1,7 @@
 import { cardResponseSchema, defaultCardResponse, systemPrompt } from "@mydost/shared";
 import { SupportedLanguage } from "@mydost/shared";
 import crypto from "crypto";
+import { Redis } from "ioredis";
 
 export type LLMInput = {
   userMessage: string;
@@ -95,7 +96,7 @@ export const createClaudeProvider = (apiKey?: string): LLMProvider => {
 const hashKey = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
 export const createSearchProvider = (
-  redis: { get: (key: string) => Promise<string | null>; set: (...args: string[]) => Promise<unknown> },
+  redis: Redis,
   apiKey?: string
 ): SearchProvider => ({
   search: async (query) => {
@@ -137,7 +138,7 @@ export const createSearchProvider = (
         .filter(Boolean) ?? [];
 
     if (snippets.length) {
-      await redis.set(cacheKey, JSON.stringify(snippets), "EX", "86400");
+      await redis.set(cacheKey, JSON.stringify(snippets), "EX", 86400);
     }
 
     return snippets;
