@@ -107,10 +107,11 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (marketsContext) contextChunks.push(marketsContext);
     }
 
-    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow)\b/i.test(
+    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow|cricket|football|soccer|league|tournament|cup|ipl|bpl|wpl|isl)\b/i.test(
       userMessage
     );
-    const ragSnippets = isSportsQuery ? await searchProvider.search(userMessage) : [];
+    const shouldSearch = topic === "sports" || isSportsQuery;
+    const ragSnippets = shouldSearch ? await searchProvider.search(userMessage) : [];
     if (ragSnippets.length) {
       contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
     }
@@ -237,10 +238,11 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (marketsContext) contextChunks.push(marketsContext);
     }
 
-    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow)\b/i.test(
+    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow|cricket|football|soccer|league|tournament|cup|ipl|bpl|wpl|isl)\b/i.test(
       parsed.data.message
     );
-    const ragSnippets = isSportsQuery ? await searchProvider.search(parsed.data.message) : [];
+    const shouldSearch = session.topic === "sports" || isSportsQuery;
+    const ragSnippets = shouldSearch ? await searchProvider.search(parsed.data.message) : [];
     if (ragSnippets.length) {
       contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
     }
