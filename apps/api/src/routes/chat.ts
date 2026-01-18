@@ -8,7 +8,7 @@ import { planConfig } from "../services/plans";
 
 export const registerChatRoutes = (app: FastifyInstance) => {
   const llmProvider = createClaudeProvider(app.env.CLAUDE_API_KEY);
-  const searchProvider = createSearchProvider();
+  const searchProvider = createSearchProvider(app.redis, app.env.SERPER_API_KEY);
   const memoryTtlSeconds = 60 * 60 * 24 * 7;
   const memoryMaxItems = 12;
 

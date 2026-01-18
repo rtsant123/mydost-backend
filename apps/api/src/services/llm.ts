@@ -1,5 +1,6 @@
 import { cardResponseSchema, defaultCardResponse, systemPrompt } from "@mydost/shared";
 import { SupportedLanguage } from "@mydost/shared";
+import crypto from "crypto";
 
 export type LLMInput = {
   userMessage: string;
@@ -91,6 +92,54 @@ export const createClaudeProvider = (apiKey?: string): LLMProvider => {
   };
 };
 
-export const createSearchProvider = (): SearchProvider => ({
-  search: async () => []
+const hashKey = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
+
+export const createSearchProvider = (
+  redis: { get: (key: string) => Promise<string | null>; set: (...args: string[]) => Promise<unknown> },
+  apiKey?: string
+): SearchProvider => ({
+  search: async (query) => {
+    const trimmed = query.trim();
+    if (!trimmed || !apiKey) {
+      return [];
+    }
+
+    const cacheKey = `search:${hashKey(trimmed.toLowerCase())}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      try {
+        return JSON.parse(cached) as string[];
+      } catch (error) {
+        // ignore cache parse errors
+      }
+    }
+
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ q: trimmed })
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as {
+      organic?: Array<{ title?: string; snippet?: string; link?: string }>;
+    };
+
+    const snippets =
+      payload.organic
+        ?.map((item) => [item.title, item.snippet, item.link].filter(Boolean).join(" - "))
+        .filter(Boolean) ?? [];
+
+    if (snippets.length) {
+      await redis.set(cacheKey, JSON.stringify(snippets), "EX", "86400");
+    }
+
+    return snippets;
+  }
 });

@@ -9,6 +9,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1),
   ADMIN_EMAILS: z.string().default(""),
   CLAUDE_API_KEY: z.string().optional(),
+  SERPER_API_KEY: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   RATE_LIMIT_TOKENS_PER_MINUTE: z.coerce.number().default(30),
   RATE_LIMIT_BUCKET_SIZE: z.coerce.number().default(60)
