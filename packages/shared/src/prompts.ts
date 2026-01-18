@@ -1,17 +1,16 @@
 import { CardResponse, SupportedLanguage } from "./types";
 
-export const systemPrompt = `You are mydost, a friendly entertainment-only assistant.\n\nRules:\n- Output CardResponse JSON only, no prose.\n- Default to a single card with type "answer" for normal chat.\n- Use structured cards only when needed:\n  - type "table" for H2H or tabular comparisons.\n  - type "match_preview"/"post_match" for match details.\n  - type "teer_summary" for teer-specific summaries.\n  - type "astrology" for astrology topics.\n- For multiple sports fixtures or predictions, ALWAYS use a single type "table" card with columns: Match, League, Time (IST), Prediction.
-- For markets lists, use a type "table" card with columns: Asset, Price (INR), Change.\n- Keep cards visually appealing: short titles, crisp bullets, and avoid walls of text.\n- Teer: historical patterns only, no today's number.\n- Astrology: entertainment-only, no medical/legal/financial guarantees.\n- If asked who created you, answer: "mydost".\n- Use user's preferred language.`;
+export const systemPrompt = `You are mydost, a friendly assistant.\n\nRules:\n- Output CardResponse JSON only, no prose.\n- Default to a single card with type "answer" for normal chat.\n- Use structured cards only when needed:\n  - type "table" for H2H or tabular comparisons.\n  - type "match_preview"/"post_match" for match details.\n  - type "teer_summary" for teer-specific summaries.\n  - type "astrology" for astrology topics.\n- For multiple sports fixtures or predictions, ALWAYS use a single type "table" card with columns: Match, League, Time (IST), Prediction.\n- For markets lists, use a type "table" card with columns: Asset, Price (INR), Change.\n- Keep cards visually appealing: short titles, crisp bullets, and avoid walls of text.\n- If asked who created you, answer: "mydost".\n- Use user's preferred language.`;
 
 export const disclaimerByLanguage: Record<SupportedLanguage, string> = {
-  hinglish: "Yeh sirf entertainment ke liye hai. Kripya ise prediction ya guarantee na samjhein.",
-  hi: "यह केवल मनोरंजन के लिए है। इसे भविष्यवाणी या गारंटी न मानें।",
-  en: "This is for entertainment only. Do not treat it as a prediction or guarantee.",
-  as: "এইটো কেৱল বিনোদনৰ বাবে। অনুগ্ৰহ কৰি ইয়াক গ্যারান্টি বুলি নধৰিব।",
-  bn: "এটি শুধুমাত্র বিনোদনের জন্য। এটিকে পূর্বাভাস বা গ্যারান্টি মনে করবেন না।",
-  kha: "Kane ka jingïa jingïaid jingïathuh paidbah ban jingïaleh. Ien bynta ïa ka jingïai bynta jingïaid hynrei ym jingïai bynta jingïap jingïadei.",
-  mni: "Masagi matamda leisure gidamak, prediction/guarantee oina khangdana.",
-  mzo: "Hei hi hun entertainment chauh a ni. Pawmna chuang lohloh tur pawim hian hman ai loh." 
+  hinglish: "Yeh sirf ek estimate hai. Guarantee nahi hai.",
+  hi: "यह केवल अनुमान है। इसकी कोई गारंटी नहीं है।",
+  en: "Predictions are not guaranteed.",
+  as: "এইটো কেৱল এক অনুমান। কোনো গাৰান্টি নাই।",
+  bn: "এটি কেবল একটি অনুমান। কোনো গ্যারান্টি নেই।",
+  kha: "Kane ka jingïa jingïaid jingïathuh paidbah hynrei ka jingïadei ym jingïap jingïap jingïadei.",
+  mni: "Masagi matamda estimationni, guarantee oina.",
+  mzo: "Hei hi khawsak a ni, a lohloh tur a hman ai loh." 
 };
 
 export const defaultCardResponse = (language: SupportedLanguage): CardResponse => ({

@@ -97,21 +97,23 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
     }
 
-    await maybeAddMatchList(userMessage, contextChunks);
+    if (topic === "sports") {
+      await maybeAddMatchList(userMessage, contextChunks);
+    }
 
-    const isMarketsQuery = /\b(market|markets|stock|stocks|share|nse|bse|sensex|nifty|crypto|bitcoin|btc|eth|solana|price)\b/i.test(
-      userMessage
-    );
-    if (topic === "markets" || isMarketsQuery) {
+    if (topic === "markets") {
       const marketsContext = await buildMarketsContext(app.redis, app.env);
       if (marketsContext) contextChunks.push(marketsContext);
     }
 
-    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow|cricket|football|soccer|league|tournament|cup|ipl|bpl|wpl|isl)\b/i.test(
-      userMessage
-    );
-    const shouldSearch = topic === "sports" || isSportsQuery;
+    const shouldSearch = topic === "sports";
+    if (shouldSearch && !app.env.SERPER_API_KEY) {
+      request.log.warn({ topic }, "SERPER_API_KEY missing; search disabled");
+    }
     const ragSnippets = shouldSearch ? await searchProvider.search(userMessage) : [];
+    if (shouldSearch) {
+      request.log.info({ topic, snippetCount: ragSnippets.length }, "Search snippets fetched");
+    }
     if (ragSnippets.length) {
       contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
     }
@@ -228,21 +230,23 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
     }
 
-    await maybeAddMatchList(parsed.data.message, contextChunks);
+    if (session.topic === "sports") {
+      await maybeAddMatchList(parsed.data.message, contextChunks);
+    }
 
-    const isMarketsQuery = /\b(market|markets|stock|stocks|share|nse|bse|sensex|nifty|crypto|bitcoin|btc|eth|solana|price)\b/i.test(
-      parsed.data.message
-    );
-    if (session.topic === "markets" || isMarketsQuery) {
+    if (session.topic === "markets") {
       const marketsContext = await buildMarketsContext(app.redis, app.env);
       if (marketsContext) contextChunks.push(marketsContext);
     }
 
-    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow|cricket|football|soccer|league|tournament|cup|ipl|bpl|wpl|isl)\b/i.test(
-      parsed.data.message
-    );
-    const shouldSearch = session.topic === "sports" || isSportsQuery;
+    const shouldSearch = session.topic === "sports";
+    if (shouldSearch && !app.env.SERPER_API_KEY) {
+      request.log.warn({ topic: session.topic }, "SERPER_API_KEY missing; search disabled");
+    }
     const ragSnippets = shouldSearch ? await searchProvider.search(parsed.data.message) : [];
+    if (shouldSearch) {
+      request.log.info({ topic: session.topic, snippetCount: ragSnippets.length }, "Search snippets fetched");
+    }
     if (ragSnippets.length) {
       contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
     }
