@@ -11,6 +11,27 @@ export const registerChatRoutes = (app: FastifyInstance) => {
   const searchProvider = createSearchProvider(app.redis, app.env.SERPER_API_KEY);
   const memoryTtlSeconds = 60 * 60 * 24 * 7;
   const memoryMaxItems = 12;
+  const formatIst = (date: Date) =>
+    new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(date);
+  const istRangeForOffset = (offsetDays: number) => {
+    const now = new Date();
+    const target = new Date(now.getTime() + offsetDays * 24 * 60 * 60 * 1000);
+    const dateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(target);
+    return {
+      label: dateStr,
+      start: new Date(`${dateStr}T00:00:00+05:30`),
+      end: new Date(`${dateStr}T23:59:59+05:30`)
+    };
+  };
 
   const extractCardText = (cards: Array<{ title?: string; content?: string; bullets?: string[] }>) => {
     const parts: string[] = [];
@@ -20,6 +41,37 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (card.bullets?.length) parts.push(...card.bullets);
     }
     return parts.map((item) => item.trim()).filter(Boolean).join("\n");
+  };
+
+  const maybeAddMatchList = async (message: string, contextChunks: string[]) => {
+    const wantsToday = /\b(today|tonight|aaj|aj)\b/i.test(message);
+    const wantsTomorrow = /\b(tomorrow|kal)\b/i.test(message);
+    if (!wantsToday && !wantsTomorrow) return;
+
+    const sports: string[] = [];
+    if (/(football|soccer)/i.test(message)) sports.push("football");
+    if (/cricket/i.test(message)) sports.push("cricket");
+
+    const ranges = [wantsToday ? istRangeForOffset(0) : null, wantsTomorrow ? istRangeForOffset(1) : null].filter(
+      Boolean
+    ) as Array<{ label: string; start: Date; end: Date }>;
+
+    for (const range of ranges) {
+      const matches = await prisma.match.findMany({
+        where: {
+          startTime: { gte: range.start, lte: range.end },
+          ...(sports.length ? { sport: { in: sports } } : {})
+        },
+        orderBy: { startTime: "asc" },
+        take: 30
+      });
+      if (!matches.length) continue;
+      const lines = matches.map(
+        (match) =>
+          `${match.teamA} vs ${match.teamB} (${match.league}) - ${formatIst(match.startTime)} [${match.status}]`
+      );
+      contextChunks.push(`Upcoming matches (${range.label} IST):\n${lines.join("\n")}`);
+    }
   };
 
   app.get("/api/chat/stream", async (request, reply) => {
@@ -44,7 +96,9 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
     }
 
-    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today)\b/i.test(
+    await maybeAddMatchList(userMessage, contextChunks);
+
+    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow)\b/i.test(
       userMessage
     );
     const ragSnippets = isSportsQuery ? await searchProvider.search(userMessage) : [];
@@ -164,7 +218,9 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
     }
 
-    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today)\b/i.test(
+    await maybeAddMatchList(parsed.data.message, contextChunks);
+
+    const isSportsQuery = /\b(match|vs|fixture|prediction|odds|score|lineup|h2h|head to head|head-to-head|standings|table|result|schedule|today|tomorrow)\b/i.test(
       parsed.data.message
     );
     const ragSnippets = isSportsQuery ? await searchProvider.search(parsed.data.message) : [];

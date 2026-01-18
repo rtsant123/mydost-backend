@@ -1,5 +1,14 @@
 import { prisma } from "@mydost/db";
 import { Redis } from "ioredis";
+import { fetchEventsDay, toMatchData } from "./providers/sportsdb";
+
+const formatIstDate = (date: Date) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
 
 export const refreshMatchBriefs = async (redis: Redis) => {
   const matches = await prisma.match.findMany({
@@ -69,5 +78,60 @@ export const generateMatchRecaps = async (redis: Redis) => {
       data: { matchId: match.id, sourcesJson: ["worker"], recapJson: recap }
     });
     await redis.set(`match:recap:${match.id}:current`, JSON.stringify(record), "EX", 60 * 60 * 12);
+  }
+};
+
+export const syncSportsFixtures = async (apiKey?: string) => {
+  if (!apiKey) return;
+
+  const today = new Date();
+  const dates = [0, 1].map((offset) => {
+    const target = new Date(today.getTime() + offset * 24 * 60 * 60 * 1000);
+    return formatIstDate(target);
+  });
+
+  const sports = [
+    { sport: "football", apiSport: "Soccer" },
+    { sport: "cricket", apiSport: "Cricket" }
+  ];
+
+  for (const date of dates) {
+    for (const { sport, apiSport } of sports) {
+      const events = await fetchEventsDay(apiKey, date, apiSport);
+      for (const event of events) {
+        const matchData = toMatchData(event);
+        if (!matchData?.sourceId) continue;
+        await prisma.match.upsert({
+          where: { source_sourceId: { source: matchData.source, sourceId: matchData.sourceId } },
+          create: {
+            sport,
+            league: matchData.league,
+            teamA: matchData.teamA,
+            teamB: matchData.teamB,
+            startTime: matchData.startTime,
+            status: matchData.status,
+            source: matchData.source,
+            sourceId: matchData.sourceId,
+            venue: matchData.venue,
+            scoreA: matchData.scoreA,
+            scoreB: matchData.scoreB,
+            statusText: matchData.statusText,
+            metaJson: matchData.metaJson
+          },
+          update: {
+            league: matchData.league,
+            teamA: matchData.teamA,
+            teamB: matchData.teamB,
+            startTime: matchData.startTime,
+            status: matchData.status,
+            venue: matchData.venue,
+            scoreA: matchData.scoreA,
+            scoreB: matchData.scoreB,
+            statusText: matchData.statusText,
+            metaJson: matchData.metaJson
+          }
+        });
+      }
+    }
   }
 };

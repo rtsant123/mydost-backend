@@ -75,6 +75,8 @@ The worker uses cron schedules internally:
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID (ID token validation) |
 | `ADMIN_EMAILS` | Comma-separated admin emails |
 | `CLAUDE_API_KEY` | Claude API key (optional) |
+| `SERPER_API_KEY` | Serper API key for web search snippets (optional but required for sports RAG) |
+| `SPORTSDB_API_KEY` | TheSportsDB API key for fixtures/results sync (required for match feed) |
 | `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook secret (optional) |
 | `RATE_LIMIT_TOKENS_PER_MINUTE` | Per-user token bucket refill rate |
 | `RATE_LIMIT_BUCKET_SIZE` | Per-user token bucket size |

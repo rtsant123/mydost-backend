@@ -13,15 +13,36 @@ const matchCreateSchema = z.object({
   startTime: z.string().datetime()
 });
 
+const matchQuerySchema = z.object({
+  sport: z.string().optional(),
+  status: z.string().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  includeVotes: z.coerce.boolean().optional()
+});
+
 export const registerMatchRoutes = (app: FastifyInstance) => {
   app.get("/api/matches", async (request, reply) => {
-    const query = request.query as { sport?: string; status?: string };
+    const parsed = matchQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.flatten() });
+    }
+    const query = parsed.data;
+    const startTime =
+      query.from || query.to
+        ? {
+            ...(query.from ? { gte: new Date(query.from) } : {}),
+            ...(query.to ? { lte: new Date(query.to) } : {})
+          }
+        : undefined;
     const matches = await prisma.match.findMany({
       where: {
         sport: query.sport,
-        status: query.status as any
+        status: query.status as any,
+        startTime
       },
-      orderBy: { startTime: "asc" }
+      orderBy: { startTime: "asc" },
+      include: query.includeVotes ? { aggregates: true } : undefined
     });
     return reply.send(matches);
   });

@@ -69,11 +69,21 @@ model Match {
   teamB      String
   startTime  DateTime
   status     MatchStatus  @default(scheduled)
+  source     String?
+  sourceId   String?
+  venue      String?
+  scoreA     Int?
+  scoreB     Int?
+  statusText String?
+  metaJson   Json?
   createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
   briefs     MatchBrief[]
   recaps     MatchRecap[]
   votes      Vote[]
   aggregates VoteAggregate?
+
+  @@unique([source, sourceId])
 }
 
 model MatchBrief {
