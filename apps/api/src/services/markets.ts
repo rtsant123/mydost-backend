@@ -2,7 +2,8 @@ import { Redis } from "ioredis";
 import { cacheGetJson, cacheSetJson } from "./cache";
 import { Env } from "../config";
 
-const cryptoKey = (ids: string[], vs: string) => `markets:crypto:${vs}:${ids.join(",")}`;
+const cryptoSymbolsKey = (symbols: string[], currency: string) =>
+  `markets:crypto:${currency}:${symbols.join(",")}`;
 const stocksKey = (symbols: string[]) => `markets:stocks:${symbols.join(",")}`;
 
 type CryptoRow = { id: string; price: number | null; change24h: number | null };
@@ -14,32 +15,47 @@ const parseList = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export const fetchCryptoSnapshot = async (
-  redis: Redis,
-  env: Env,
-  vs: string = "inr"
-): Promise<CryptoRow[]> => {
-  const ids = parseList(env.MARKET_CRYPTO_IDS);
-  const cached = await cacheGetJson<CryptoRow[]>(redis, cryptoKey(ids, vs));
+export const fetchCryptoSnapshot = async (redis: Redis, env: Env): Promise<CryptoRow[]> => {
+  const apiKey = env.FREECRYPTO_API_KEY;
+  if (!apiKey) return [];
+
+  const symbols = parseList(env.MARKET_CRYPTO_SYMBOLS).map((symbol) => symbol.toUpperCase());
+  const currency = env.MARKET_CRYPTO_CURRENCY.toUpperCase();
+  const cacheKey = cryptoSymbolsKey(symbols, currency);
+  const cached = await cacheGetJson<CryptoRow[]>(redis, cacheKey);
   if (cached) return cached;
 
-  const url = new URL("https://api.coingecko.com/api/v3/simple/price");
-  url.searchParams.set("ids", ids.join(","));
-  url.searchParams.set("vs_currencies", vs);
-  url.searchParams.set("include_24hr_change", "true");
+  const endpoint = currency === "USD" ? "getData" : "getDataCurrency";
+  const results: CryptoRow[] = [];
 
-  const response = await fetch(url.toString());
-  if (!response.ok) return [];
+  for (const symbol of symbols) {
+    const url = new URL(`https://api.freecryptoapi.com/v1/${endpoint}`);
+    url.searchParams.set("symbol", symbol);
+    if (endpoint === "getDataCurrency") {
+      url.searchParams.set("currency", currency);
+    }
 
-  const payload = (await response.json()) as Record<string, Record<string, number>>;
-  const data = ids.map((id) => ({
-    id,
-    price: payload?.[id]?.[vs] ?? null,
-    change24h: payload?.[id]?.[`${vs}_24h_change`] ?? null
-  }));
+    const response = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    if (!response.ok) {
+      results.push({ id: symbol, price: null, change24h: null });
+      continue;
+    }
+    const payload = (await response.json()) as {
+      symbol?: string;
+      price?: number;
+      change_24h?: number;
+    };
+    results.push({
+      id: symbol,
+      price: payload?.price ?? null,
+      change24h: payload?.change_24h ?? null
+    });
+  }
 
-  await cacheSetJson(redis, cryptoKey(ids, vs), data, 60);
-  return data;
+  await cacheSetJson(redis, cacheKey, results, 60);
+  return results;
 };
 
 export const fetchStockSnapshot = async (redis: Redis, env: Env): Promise<StockRow[]> => {
@@ -78,15 +94,19 @@ export const fetchStockSnapshot = async (redis: Redis, env: Env): Promise<StockR
 
 export const buildMarketsContext = async (redis: Redis, env: Env) => {
   const [crypto, stocks] = await Promise.all([
-    fetchCryptoSnapshot(redis, env, "inr"),
+    fetchCryptoSnapshot(redis, env),
     fetchStockSnapshot(redis, env)
   ]);
 
   const lines: string[] = [];
   if (crypto.length) {
+    const currency = env.MARKET_CRYPTO_CURRENCY.toUpperCase();
+    const prefix = currency === "INR" ? "₹" : `${currency} `;
     lines.push(
-      "Crypto (INR):",
-      ...crypto.map((row) => `${row.id.toUpperCase()}: ₹${row.price ?? "—"} (${row.change24h ?? "—"}% 24h)`)
+      `Crypto (${currency}):`,
+      ...crypto.map(
+        (row) => `${row.id.toUpperCase()}: ${prefix}${row.price ?? "—"} (${row.change24h ?? "—"}% 24h)`
+      )
     );
   }
   if (stocks.length) {

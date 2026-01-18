@@ -77,6 +77,11 @@ The worker uses cron schedules internally:
 | `CLAUDE_API_KEY` | Claude API key (optional) |
 | `SERPER_API_KEY` | Serper API key for web search snippets (optional but required for sports RAG) |
 | `SPORTSDB_API_KEY` | TheSportsDB API key for fixtures/results sync (required for match feed) |
+| `ALPHA_VANTAGE_API_KEY` | Alpha Vantage API key for stock quotes (markets) |
+| `MARKET_STOCK_SYMBOLS` | Comma-separated stock symbols (India defaults) |
+| `MARKET_CRYPTO_SYMBOLS` | FreeCryptoAPI symbols (BTC, ETH, etc.) |
+| `MARKET_CRYPTO_CURRENCY` | Crypto pricing currency (default INR) |
+| `FREECRYPTO_API_KEY` | FreeCryptoAPI key for crypto prices |
 | `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook secret (optional) |
 | `RATE_LIMIT_TOKENS_PER_MINUTE` | Per-user token bucket refill rate |
 | `RATE_LIMIT_BUCKET_SIZE` | Per-user token bucket size |
