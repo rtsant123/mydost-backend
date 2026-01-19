@@ -78,34 +78,54 @@ export const registerChatRoutes = (app: FastifyInstance) => {
 
     const normalized = message.trim();
     if (matchName) {
-      pushUnique(`${matchName} probable XI`);
-      pushUnique(`${matchName} head to head`);
-      pushUnique(`${matchName} playing 11`);
+      pushUnique(`${matchName} live score`);
+      pushUnique(`${matchName} latest updates`);
     }
     if (normalized) pushUnique(normalized);
 
-    return queries.slice(0, 4);
+    return queries.slice(0, 2);
   };
 
   const analysisKeywords =
-    /\b(analysis|analyze|compare|vs|stats?|statistics|table|summary|insight|why|how|explain|prediction|forecast|probable|playing\s?xi|xi|11|lineup|line-up|h2h|head\s*to\s*head|pitch|injury|squad|key players|price|rate|odds|latest|live|score|updates?)\b/i;
+    /\b(analysis|analyze|compare|vs|stats?|statistics|table|summary|insight|prediction|forecast|h2h|head\s*to\s*head|fixture|fixtures|schedule|matches|list)\b/i;
 
   const isSmallTalk = (message: string) =>
     /^\s*(hi|hello|hey|thanks|thank you|ok|okay|cool|nice|bye|good morning|good night|how are you)\b/i.test(
       message
     );
 
+  const cannedSmallTalk = (message: string) => {
+    const normalized = message.trim().toLowerCase();
+    if (/^(hi|hello|hey)\b/.test(normalized)) return "Hi! How can I help?";
+    if (/^how are you\b/.test(normalized)) return "I’m good — how are you?";
+    if (/^(thanks|thank you)\b/.test(normalized)) return "You’re welcome! Need anything else?";
+    if (/^(bye|good night)\b/.test(normalized)) return "Bye! Come back anytime.";
+    if (/^good morning\b/.test(normalized)) return "Good morning! How can I help today?";
+    if (/^(ok|okay|cool|nice)\b/.test(normalized)) return "Got it. Anything else you need?";
+    return null;
+  };
+
   const decideResponseMode = (topic: string, message: string) => {
     if (isSmallTalk(message)) return "text" as const;
-    if (analysisKeywords.test(message)) return "cards" as const;
     if (topic === "dost") return "text" as const;
-    return "cards" as const;
+    if (analysisKeywords.test(message)) return "cards" as const;
+    if (topic === "sports" && /\b(match|matches|fixtures|schedule|today|tomorrow|tonight)\b/i.test(message)) {
+      return "cards" as const;
+    }
+    if (topic === "markets" && /\b(price|rate|list|change|market)\b/i.test(message)) {
+      return "cards" as const;
+    }
+    if (topic === "teer" && /\b(summary|history|result|prediction)\b/i.test(message)) {
+      return "cards" as const;
+    }
+    if (topic === "astrology" && /\b(horoscope|kundli|rashi|lagna|prediction)\b/i.test(message)) {
+      return "cards" as const;
+    }
+    return "text" as const;
   };
 
   const wantsFreshSportsData = (message: string) =>
-    /\b(live|latest|today|tonight|now|current|score|updates?|probable|playing\s?xi|xi|11|lineup|line-up|h2h|head\s*to\s*head|pitch|injury|squad|key players)\b/i.test(
-      message
-    );
+    /\b(live|latest|today|tonight|now|current|score|updates?)\b/i.test(message);
 
   const fetchRagSnippets = async (queries: string[]) => {
     const chunks: string[] = [];
@@ -201,20 +221,27 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     }
 
     const responseMode = decideResponseMode(topic, userMessage);
-    const llmInput = {
-      userMessage,
-      language: (query.language as any) ?? "hinglish",
-      context: contextChunks.join("\n\n"),
-      maxTokens: 350,
-      responseStyle: "short",
-      outputFormat: responseMode,
-      model: responseMode === "cards" ? analysisModel : chatModel
-    };
+    const cannedResponse = responseMode === "text" ? cannedSmallTalk(userMessage) : null;
 
-    const response = await llmProvider.generateCards(llmInput);
-    const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
-    const cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
-    const textResponse = typeof response === "string" ? response : "Not available.";
+    let cardResponse = defaultCardResponse((query.language as any) ?? "hinglish");
+    let textResponse = cannedResponse ?? "Not available.";
+
+    if (!cannedResponse) {
+      const llmInput = {
+        userMessage,
+        language: (query.language as any) ?? "hinglish",
+        context: contextChunks.join("\n\n"),
+        maxTokens: 350,
+        responseStyle: "short",
+        outputFormat: responseMode,
+        model: responseMode === "cards" ? analysisModel : chatModel
+      };
+
+      const response = await llmProvider.generateCards(llmInput);
+      const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
+      cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
+      textResponse = typeof response === "string" ? response : "Not available.";
+    }
 
     const origin = request.headers.origin ?? "*";
     reply.raw.writeHead(200, {
@@ -358,20 +385,27 @@ export const registerChatRoutes = (app: FastifyInstance) => {
 
     const responseStyle = usage.messageCount > 20 ? "short" : (prefs?.responseStyle ?? "short");
     const responseMode = decideResponseMode(session.topic, parsed.data.message);
-    const llmInput = {
-      userMessage: parsed.data.message,
-      language: (prefs?.language as any) ?? "hinglish",
-      context: contextChunks.join("\n\n"),
-      maxTokens: plan.maxTokens,
-      responseStyle,
-      outputFormat: responseMode,
-      model: responseMode === "cards" ? analysisModel : chatModel
-    };
+    const cannedResponse = responseMode === "text" ? cannedSmallTalk(parsed.data.message) : null;
 
-    const response = await llmProvider.generateCards(llmInput);
-    const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
-    const cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
-    const textResponse = typeof response === "string" ? response : "Not available.";
+    let cardResponse = defaultCardResponse((prefs?.language as any) ?? "hinglish");
+    let textResponse = cannedResponse ?? "Not available.";
+
+    if (!cannedResponse) {
+      const llmInput = {
+        userMessage: parsed.data.message,
+        language: (prefs?.language as any) ?? "hinglish",
+        context: contextChunks.join("\n\n"),
+        maxTokens: plan.maxTokens,
+        responseStyle,
+        outputFormat: responseMode,
+        model: responseMode === "cards" ? analysisModel : chatModel
+      };
+
+      const response = await llmProvider.generateCards(llmInput);
+      const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
+      cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
+      textResponse = typeof response === "string" ? response : "Not available.";
+    }
 
     await prisma.chatMessage.create({
       data: {
