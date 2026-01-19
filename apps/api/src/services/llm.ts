@@ -1,4 +1,4 @@
-import { cardResponseSchema, defaultCardResponse, systemPrompt } from "@mydost/shared";
+import { cardResponseSchema, defaultCardResponse, systemPrompt, textSystemPrompt } from "@mydost/shared";
 import { SupportedLanguage } from "@mydost/shared";
 import crypto from "crypto";
 import { Redis } from "ioredis";
@@ -9,6 +9,9 @@ export type LLMInput = {
   context: string;
   maxTokens: number;
   responseStyle?: string;
+  outputFormat?: "cards" | "text";
+  model?: string;
+  systemPromptOverride?: string;
 };
 
 export type LLMProvider = {
@@ -19,7 +22,29 @@ export type SearchProvider = {
   search: (query: string) => Promise<string[]>;
 };
 
-export const createClaudeProvider = (apiKey?: string): LLMProvider => {
+type ClaudeOptions = {
+  model?: string;
+  maxInputChars?: number;
+  maxContextChars?: number;
+};
+
+type SearchOptions = {
+  cacheTtlSeconds?: number;
+  maxSnippets?: number;
+  maxSnippetChars?: number;
+};
+
+const clampText = (value: string, maxChars?: number) => {
+  if (!maxChars || value.length <= maxChars) return value;
+  return value.slice(0, maxChars);
+};
+
+const clampContext = (value: string, maxChars?: number) => {
+  if (!maxChars || value.length <= maxChars) return value;
+  return value.slice(-maxChars);
+};
+
+export const createClaudeProvider = (apiKey?: string, options?: ClaudeOptions): LLMProvider => {
   if (!apiKey) {
     return {
       generateCards: async (input) => defaultCardResponse(input.language)
@@ -40,6 +65,12 @@ export const createClaudeProvider = (apiKey?: string): LLMProvider => {
 
   return {
     generateCards: async (input) => {
+      const safeUserMessage = clampText(input.userMessage, options?.maxInputChars);
+      const safeContext = clampContext(input.context, options?.maxContextChars);
+      const model = input.model ?? options?.model ?? "claude-3-5-haiku-20241022";
+      const outputFormat = input.outputFormat ?? "cards";
+      const system =
+        input.systemPromptOverride ?? (outputFormat === "text" ? textSystemPrompt : systemPrompt);
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -48,13 +79,16 @@ export const createClaudeProvider = (apiKey?: string): LLMProvider => {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          model: "claude-3-haiku-20240307",
+          model,
           max_tokens: input.maxTokens,
-          system: systemPrompt,
+          system,
           messages: [
             {
               role: "user",
-              content: `Context:\n${input.context}\n\nUser message:\n${input.userMessage}\n\nResponse style: ${input.responseStyle ?? "short"}\n\nReturn CardResponse JSON only.`
+              content:
+                outputFormat === "text"
+                  ? `Context:\n${safeContext}\n\nUser message:\n${safeUserMessage}\n\nResponse style: ${input.responseStyle ?? "short"}`
+                  : `Context:\n${safeContext}\n\nUser message:\n${safeUserMessage}\n\nResponse style: ${input.responseStyle ?? "short"}\n\nReturn CardResponse JSON only.`
             }
           ]
         })
@@ -66,6 +100,9 @@ export const createClaudeProvider = (apiKey?: string): LLMProvider => {
 
       const payload = (await response.json()) as { content?: Array<{ type: string; text: string }> };
       const text = payload.content?.find((item) => item.type === "text")?.text ?? "";
+      if (outputFormat === "text") {
+        return text.trim() || "Not available.";
+      }
       try {
         const parsed = JSON.parse(text);
         const validated = cardResponseSchema.safeParse(parsed);
@@ -97,7 +134,8 @@ const hashKey = (value: string) => crypto.createHash("sha256").update(value).dig
 
 export const createSearchProvider = (
   redis: Redis,
-  apiKey?: string
+  apiKey?: string,
+  options?: SearchOptions
 ): SearchProvider => ({
   search: async (query) => {
     const trimmed = query.trim();
@@ -137,10 +175,16 @@ export const createSearchProvider = (
         ?.map((item) => [item.title, item.snippet, item.link].filter(Boolean).join(" - "))
         .filter(Boolean) ?? [];
 
-    if (snippets.length) {
-      await redis.set(cacheKey, JSON.stringify(snippets), "EX", 86400);
+    const maxSnippetChars = options?.maxSnippetChars ?? 360;
+    const maxSnippets = options?.maxSnippets ?? 6;
+    const sliced = snippets
+      .map((item) => (item.length > maxSnippetChars ? item.slice(0, maxSnippetChars) : item))
+      .slice(0, maxSnippets);
+
+    if (sliced.length) {
+      await redis.set(cacheKey, JSON.stringify(sliced), "EX", options?.cacheTtlSeconds ?? 86400);
     }
 
-    return snippets;
+    return sliced;
   }
 });

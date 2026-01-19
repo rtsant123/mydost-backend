@@ -2,7 +2,14 @@ import cron from "node-cron";
 import pino from "pino";
 import Redis from "ioredis";
 import { loadEnv } from "./config";
-import { refreshMatchBriefs, refreshTeerSummaries, generateMatchRecaps, syncSportsFixtures } from "./tasks";
+import {
+  refreshMatchBriefs,
+  refreshTeerSummaries,
+  generateMatchRecaps,
+  syncSportsFixtures,
+  refreshMarketSnapshots,
+  refreshSportsRagCache
+} from "./tasks";
 
 const env = loadEnv();
 const logger = pino();
@@ -24,5 +31,17 @@ cron.schedule("15 * * * *", () => runTask("generateMatchRecaps", () => generateM
 cron.schedule("*/30 * * * *", () =>
   runTask("syncSportsFixtures", () => syncSportsFixtures(env.SPORTSDB_API_KEY))
 );
+cron.schedule(
+  "15 0 * * *",
+  () => runTask("refreshMarketSnapshots", () => refreshMarketSnapshots(redis, env)),
+  { timezone: "Asia/Kolkata" }
+);
+if (env.RAG_PREFETCH_ENABLED) {
+  cron.schedule(
+    "30 0 * * *",
+    () => runTask("refreshSportsRagCache", () => refreshSportsRagCache(redis, env)),
+    { timezone: "Asia/Kolkata" }
+  );
+}
 
 logger.info("Worker started");
