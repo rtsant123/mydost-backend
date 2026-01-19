@@ -74,6 +74,10 @@ const html = `<!doctype html>
 
 export const registerDostRoutes = (app: FastifyInstance) => {
   app.get("/dost", async (_request, reply) => {
+    reply.header(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+    );
     return reply.type("text/html; charset=utf-8").send(html);
   });
 };
