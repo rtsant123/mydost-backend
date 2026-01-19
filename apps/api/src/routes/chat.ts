@@ -55,6 +55,35 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     return parts.map((item) => item.trim()).filter(Boolean).join("\n");
   };
 
+  const sendStreamCard = (reply: any, origin: string, payload: unknown) => {
+    if (!reply.raw.headersSent) {
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type",
+        Vary: "Origin"
+      });
+    }
+    reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+    reply.raw.write("data: {\"done\":true}\n\n");
+    reply.raw.end();
+  };
+
+  const sendMessageCard = (reply: any, payload: unknown) => {
+    if (!reply.raw.headersSent) {
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive"
+      });
+    }
+    reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+    reply.raw.end();
+  };
+
   const toTextCardResponse = (text: string, language: any) => ({
     cards: [
       {
@@ -182,97 +211,92 @@ export const registerChatRoutes = (app: FastifyInstance) => {
   };
 
   app.get("/api/chat/stream", async (request, reply) => {
-    const query = request.query as { q?: string; topic?: string; matchId?: string; language?: string };
-    const userMessage = query.q?.trim();
-    if (!userMessage) {
-      return reply.status(400).send({ error: "Missing q" });
-    }
-
-    const contextChunks: string[] = [];
-    const topic = query.topic ?? "general";
-    contextChunks.push(`Topic: ${topic}`);
-
-    let matchName: string | undefined;
-    if (topic === "sports" && query.matchId) {
-      const matchContext = await buildMatchContext(query.matchId);
-      if (matchContext) {
-        contextChunks.push(matchContext.text);
-        matchName = `${matchContext.match.teamA} vs ${matchContext.match.teamB}`;
+    try {
+      const query = request.query as { q?: string; topic?: string; matchId?: string; language?: string };
+      const userMessage = query.q?.trim();
+      if (!userMessage) {
+        return reply.status(400).send({ error: "Missing q" });
       }
-      const brief = await cacheGetJson(app.redis, `match:brief:${query.matchId}:current`);
-      if (brief) contextChunks.push(`Match brief: ${JSON.stringify(brief)}`);
-      const recap = await cacheGetJson(app.redis, `match:recap:${query.matchId}:current`);
-      if (recap) contextChunks.push(`Match recap: ${JSON.stringify(recap)}`);
+
+      const contextChunks: string[] = [];
+      const topic = query.topic ?? "general";
+      contextChunks.push(`Topic: ${topic}`);
+
+      let matchName: string | undefined;
+      if (topic === "sports" && query.matchId) {
+        const matchContext = await buildMatchContext(query.matchId);
+        if (matchContext) {
+          contextChunks.push(matchContext.text);
+          matchName = `${matchContext.match.teamA} vs ${matchContext.match.teamB}`;
+        }
+        const brief = await cacheGetJson(app.redis, `match:brief:${query.matchId}:current`);
+        if (brief) contextChunks.push(`Match brief: ${JSON.stringify(brief)}`);
+        const recap = await cacheGetJson(app.redis, `match:recap:${query.matchId}:current`);
+        if (recap) contextChunks.push(`Match recap: ${JSON.stringify(recap)}`);
+      }
+
+      if (topic === "teer" && query.matchId) {
+        const summary = await cacheGetJson(app.redis, `teer:summary:${query.matchId}:30`);
+        if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
+      }
+
+      if (topic === "sports") {
+        await maybeAddMatchList(userMessage, contextChunks);
+      }
+
+      if (topic === "markets") {
+        const marketsContext = await buildMarketsContext(app.redis, app.env);
+        if (marketsContext) contextChunks.push(marketsContext);
+      }
+
+      const shouldSearch = topic === "sports" && wantsFreshSportsData(userMessage);
+      if (shouldSearch && !app.env.SERPER_API_KEY) {
+        request.log.warn({ topic }, "SERPER_API_KEY missing; search disabled");
+      }
+      const searchQueries = shouldSearch ? buildSportsSearchQueries(userMessage, matchName) : [];
+      const ragSnippets = shouldSearch ? await fetchRagSnippets(searchQueries) : [];
+      if (shouldSearch) {
+        request.log.info({ topic, snippetCount: ragSnippets.length }, "Search snippets fetched");
+      }
+      if (ragSnippets.length) {
+        contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
+      }
+
+      const responseMode = decideResponseMode(topic, userMessage);
+      const cannedResponse = responseMode === "text" ? cannedSmallTalk(userMessage) : null;
+
+      const language = (query.language as any) ?? "hinglish";
+      let cardResponse = defaultCardResponse(language);
+      let textResponse = cannedResponse ?? "Not available.";
+
+      if (!cannedResponse) {
+        const llmInput = {
+          userMessage,
+          language,
+          context: contextChunks.join("\n\n"),
+          maxTokens: 350,
+          responseStyle: "short",
+          outputFormat: responseMode,
+          model: responseMode === "cards" ? analysisModel : chatModel
+        };
+
+        const response = await llmProvider.generateCards(llmInput);
+        const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
+        cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
+        textResponse = typeof response === "string" ? response : "Not available.";
+      }
+
+      if (responseMode === "text") {
+        cardResponse = toTextCardResponse(textResponse, language);
+      }
+
+      const origin = request.headers.origin ?? "*";
+      sendStreamCard(reply, origin, { card: cardResponse });
+    } catch (error) {
+      request.log.error({ error }, "Chat stream failed");
+      const origin = request.headers.origin ?? "*";
+      sendStreamCard(reply, origin, { card: defaultCardResponse("hinglish") });
     }
-
-    if (topic === "teer" && query.matchId) {
-      const summary = await cacheGetJson(app.redis, `teer:summary:${query.matchId}:30`);
-      if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
-    }
-
-    if (topic === "sports") {
-      await maybeAddMatchList(userMessage, contextChunks);
-    }
-
-    if (topic === "markets") {
-      const marketsContext = await buildMarketsContext(app.redis, app.env);
-      if (marketsContext) contextChunks.push(marketsContext);
-    }
-
-    const shouldSearch = topic === "sports" && wantsFreshSportsData(userMessage);
-    if (shouldSearch && !app.env.SERPER_API_KEY) {
-      request.log.warn({ topic }, "SERPER_API_KEY missing; search disabled");
-    }
-    const searchQueries = shouldSearch ? buildSportsSearchQueries(userMessage, matchName) : [];
-    const ragSnippets = shouldSearch ? await fetchRagSnippets(searchQueries) : [];
-    if (shouldSearch) {
-      request.log.info({ topic, snippetCount: ragSnippets.length }, "Search snippets fetched");
-    }
-    if (ragSnippets.length) {
-      contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
-    }
-
-    const responseMode = decideResponseMode(topic, userMessage);
-    const cannedResponse = responseMode === "text" ? cannedSmallTalk(userMessage) : null;
-
-    const language = (query.language as any) ?? "hinglish";
-    let cardResponse = defaultCardResponse(language);
-    let textResponse = cannedResponse ?? "Not available.";
-
-    if (!cannedResponse) {
-      const llmInput = {
-        userMessage,
-        language,
-        context: contextChunks.join("\n\n"),
-        maxTokens: 350,
-        responseStyle: "short",
-        outputFormat: responseMode,
-        model: responseMode === "cards" ? analysisModel : chatModel
-      };
-
-      const response = await llmProvider.generateCards(llmInput);
-      const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
-      cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
-      textResponse = typeof response === "string" ? response : "Not available.";
-    }
-
-    if (responseMode === "text") {
-      cardResponse = toTextCardResponse(textResponse, language);
-    }
-
-    const origin = request.headers.origin ?? "*";
-    reply.raw.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "content-type",
-      Vary: "Origin"
-    });
-    reply.raw.write(`data: ${JSON.stringify({ card: cardResponse })}\n\n`);
-    reply.raw.write("data: {\"done\":true}\n\n");
-    reply.raw.end();
   });
 
   app.post("/api/chat/start", async (request, reply) => {
@@ -305,172 +329,171 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       return reply.status(401).send({ error: "Unauthorized" });
     }
 
-    const payload = request.user as { sub: string };
-    const parsed = chatMessageSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() });
-    }
-
-    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user) {
-      return reply.status(404).send({ error: "User not found" });
-    }
-
-    const prefs = await prisma.userPrefs.findUnique({ where: { userId: payload.sub } });
-    const plan = planConfig[user.plan as keyof typeof planConfig];
-    const usage = await getUsage(payload.sub);
-    if (plan.dailyMessages !== "unlimited" && usage.messageCount >= plan.dailyMessages) {
-      return reply.status(429).send({ error: "Daily message limit reached" });
-    }
-
-    const session = await prisma.chatSession.findUnique({ where: { id: parsed.data.sessionId } });
-    if (!session || session.userId !== payload.sub) {
-      return reply.status(404).send({ error: "Session not found" });
-    }
-
-    const recentMessages = await prisma.chatMessage.findMany({
-      where: { sessionId: session.id },
-      orderBy: { createdAt: "desc" },
-      take: 3
-    });
-
-    const contextChunks: string[] = [];
-    const memoryKey = `memory:${payload.sub}:${session.topic}`;
-    contextChunks.push(`Topic: ${session.topic}`);
-    const memoryRaw = await app.redis.get(memoryKey);
-    if (memoryRaw) {
-      try {
-        const memoryItems = JSON.parse(memoryRaw) as string[];
-        if (memoryItems.length) {
-          contextChunks.push(`Memory:\n${memoryItems.join("\n")}`);
-        }
-      } catch (error) {
-        // ignore corrupted memory
+    try {
+      const payload = request.user as { sub: string };
+      const parsed = chatMessageSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
-    }
 
-    let sessionMatchName: string | undefined;
-    if (session.topic === "sports" && session.refId) {
-      const matchContext = await buildMatchContext(session.refId);
-      if (matchContext) {
-        contextChunks.push(matchContext.text);
-        sessionMatchName = `${matchContext.match.teamA} vs ${matchContext.match.teamB}`;
+      const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+      if (!user) {
+        return reply.status(404).send({ error: "User not found" });
       }
-      const brief = await cacheGetJson(app.redis, `match:brief:${session.refId}:current`);
-      if (brief) contextChunks.push(`Match brief: ${JSON.stringify(brief)}`);
-      const recap = await cacheGetJson(app.redis, `match:recap:${session.refId}:current`);
-      if (recap) contextChunks.push(`Match recap: ${JSON.stringify(recap)}`);
-    }
 
-    if (session.topic === "teer" && session.refId) {
-      const summary = await cacheGetJson(app.redis, `teer:summary:${session.refId}:30`);
-      if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
-    }
-
-    if (session.topic === "sports") {
-      await maybeAddMatchList(parsed.data.message, contextChunks);
-    }
-
-    if (session.topic === "markets") {
-      const marketsContext = await buildMarketsContext(app.redis, app.env);
-      if (marketsContext) contextChunks.push(marketsContext);
-    }
-
-    const shouldSearch = session.topic === "sports" && wantsFreshSportsData(parsed.data.message);
-    if (shouldSearch && !app.env.SERPER_API_KEY) {
-      request.log.warn({ topic: session.topic }, "SERPER_API_KEY missing; search disabled");
-    }
-    const searchQueries = shouldSearch ? buildSportsSearchQueries(parsed.data.message, sessionMatchName) : [];
-    const ragSnippets = shouldSearch ? await fetchRagSnippets(searchQueries) : [];
-    if (shouldSearch) {
-      request.log.info({ topic: session.topic, snippetCount: ragSnippets.length }, "Search snippets fetched");
-    }
-    if (ragSnippets.length) {
-      contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
-    }
-
-    if (prefs) {
-      contextChunks.push(`User prefs: ${JSON.stringify(prefs)}`);
-    }
-
-    if (recentMessages.length) {
-      const history = recentMessages.reverse().map((msg) => `${msg.role}: ${msg.content}`);
-      contextChunks.push(`History:\n${history.join("\n")}`);
-    }
-
-    const responseStyle = usage.messageCount > 20 ? "short" : (prefs?.responseStyle ?? "short");
-    const responseMode = decideResponseMode(session.topic, parsed.data.message);
-    const cannedResponse = responseMode === "text" ? cannedSmallTalk(parsed.data.message) : null;
-
-    const language = (prefs?.language as any) ?? "hinglish";
-    let cardResponse = defaultCardResponse(language);
-    let textResponse = cannedResponse ?? "Not available.";
-
-    if (!cannedResponse) {
-      const llmInput = {
-        userMessage: parsed.data.message,
-        language,
-        context: contextChunks.join("\n\n"),
-        maxTokens: plan.maxTokens,
-        responseStyle,
-        outputFormat: responseMode,
-        model: responseMode === "cards" ? analysisModel : chatModel
-      };
-
-      const response = await llmProvider.generateCards(llmInput);
-      const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
-      cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
-      textResponse = typeof response === "string" ? response : "Not available.";
-    }
-
-    if (responseMode === "text") {
-      cardResponse = toTextCardResponse(textResponse, language);
-    }
-
-    await prisma.chatMessage.create({
-      data: {
-        sessionId: session.id,
-        role: "user",
-        content: parsed.data.message,
-        tokenEstimate: parsed.data.message.length
+      const prefs = await prisma.userPrefs.findUnique({ where: { userId: payload.sub } });
+      const plan = planConfig[user.plan as keyof typeof planConfig];
+      const usage = await getUsage(payload.sub);
+      if (plan.dailyMessages !== "unlimited" && usage.messageCount >= plan.dailyMessages) {
+        return reply.status(429).send({ error: "Daily message limit reached" });
       }
-    });
 
-    await prisma.chatMessage.create({
-      data: {
-        sessionId: session.id,
-        role: "assistant",
-        content: responseMode === "cards" ? JSON.stringify(cardResponse) : textResponse,
-        cardsJson: responseMode === "cards" ? (cardResponse as any) : null,
-        tokenEstimate:
-          responseMode === "cards" ? JSON.stringify(cardResponse).length : textResponse.length
+      const session = await prisma.chatSession.findUnique({ where: { id: parsed.data.sessionId } });
+      if (!session || session.userId !== payload.sub) {
+        return reply.status(404).send({ error: "Session not found" });
       }
-    });
 
-    const assistantText = responseMode === "cards" ? extractCardText(cardResponse.cards as any) : textResponse;
-    const memoryUpdate = [`user: ${parsed.data.message}`, `assistant: ${assistantText}`];
-    if (memoryUpdate.length) {
-      let existing: string[] = [];
+      const recentMessages = await prisma.chatMessage.findMany({
+        where: { sessionId: session.id },
+        orderBy: { createdAt: "desc" },
+        take: 3
+      });
+
+      const contextChunks: string[] = [];
+      const memoryKey = `memory:${payload.sub}:${session.topic}`;
+      contextChunks.push(`Topic: ${session.topic}`);
+      const memoryRaw = await app.redis.get(memoryKey);
       if (memoryRaw) {
         try {
-          existing = JSON.parse(memoryRaw) as string[];
+          const memoryItems = JSON.parse(memoryRaw) as string[];
+          if (memoryItems.length) {
+            contextChunks.push(`Memory:\n${memoryItems.join("\n")}`);
+          }
         } catch (error) {
-          existing = [];
+          // ignore corrupted memory
         }
       }
-      const next = [...existing, ...memoryUpdate].slice(-memoryMaxItems);
-      await app.redis.set(memoryKey, JSON.stringify(next), "EX", memoryTtlSeconds);
+
+      let sessionMatchName: string | undefined;
+      if (session.topic === "sports" && session.refId) {
+        const matchContext = await buildMatchContext(session.refId);
+        if (matchContext) {
+          contextChunks.push(matchContext.text);
+          sessionMatchName = `${matchContext.match.teamA} vs ${matchContext.match.teamB}`;
+        }
+        const brief = await cacheGetJson(app.redis, `match:brief:${session.refId}:current`);
+        if (brief) contextChunks.push(`Match brief: ${JSON.stringify(brief)}`);
+        const recap = await cacheGetJson(app.redis, `match:recap:${session.refId}:current`);
+        if (recap) contextChunks.push(`Match recap: ${JSON.stringify(recap)}`);
+      }
+
+      if (session.topic === "teer" && session.refId) {
+        const summary = await cacheGetJson(app.redis, `teer:summary:${session.refId}:30`);
+        if (summary) contextChunks.push(`Teer summary: ${JSON.stringify(summary)}`);
+      }
+
+      if (session.topic === "sports") {
+        await maybeAddMatchList(parsed.data.message, contextChunks);
+      }
+
+      if (session.topic === "markets") {
+        const marketsContext = await buildMarketsContext(app.redis, app.env);
+        if (marketsContext) contextChunks.push(marketsContext);
+      }
+
+      const shouldSearch = session.topic === "sports" && wantsFreshSportsData(parsed.data.message);
+      if (shouldSearch && !app.env.SERPER_API_KEY) {
+        request.log.warn({ topic: session.topic }, "SERPER_API_KEY missing; search disabled");
+      }
+      const searchQueries = shouldSearch ? buildSportsSearchQueries(parsed.data.message, sessionMatchName) : [];
+      const ragSnippets = shouldSearch ? await fetchRagSnippets(searchQueries) : [];
+      if (shouldSearch) {
+        request.log.info({ topic: session.topic, snippetCount: ragSnippets.length }, "Search snippets fetched");
+      }
+      if (ragSnippets.length) {
+        contextChunks.push(`RAG snippets: ${ragSnippets.join("\n")}`);
+      }
+
+      if (prefs) {
+        contextChunks.push(`User prefs: ${JSON.stringify(prefs)}`);
+      }
+
+      if (recentMessages.length) {
+        const history = recentMessages.reverse().map((msg) => `${msg.role}: ${msg.content}`);
+        contextChunks.push(`History:\n${history.join("\n")}`);
+      }
+
+      const responseStyle = usage.messageCount > 20 ? "short" : (prefs?.responseStyle ?? "short");
+      const responseMode = decideResponseMode(session.topic, parsed.data.message);
+      const cannedResponse = responseMode === "text" ? cannedSmallTalk(parsed.data.message) : null;
+
+      const language = (prefs?.language as any) ?? "hinglish";
+      let cardResponse = defaultCardResponse(language);
+      let textResponse = cannedResponse ?? "Not available.";
+
+      if (!cannedResponse) {
+        const llmInput = {
+          userMessage: parsed.data.message,
+          language,
+          context: contextChunks.join("\n\n"),
+          maxTokens: plan.maxTokens,
+          responseStyle,
+          outputFormat: responseMode,
+          model: responseMode === "cards" ? analysisModel : chatModel
+        };
+
+        const response = await llmProvider.generateCards(llmInput);
+        const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
+        cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
+        textResponse = typeof response === "string" ? response : "Not available.";
+      }
+
+      if (responseMode === "text") {
+        cardResponse = toTextCardResponse(textResponse, language);
+      }
+
+      await prisma.chatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "user",
+          content: parsed.data.message,
+          tokenEstimate: parsed.data.message.length
+        }
+      });
+
+      await prisma.chatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: responseMode === "cards" ? JSON.stringify(cardResponse) : textResponse,
+          cardsJson: responseMode === "cards" ? (cardResponse as any) : null,
+          tokenEstimate:
+            responseMode === "cards" ? JSON.stringify(cardResponse).length : textResponse.length
+        }
+      });
+
+      const assistantText = responseMode === "cards" ? extractCardText(cardResponse.cards as any) : textResponse;
+      const memoryUpdate = [`user: ${parsed.data.message}`, `assistant: ${assistantText}`];
+      if (memoryUpdate.length) {
+        let existing: string[] = [];
+        if (memoryRaw) {
+          try {
+            existing = JSON.parse(memoryRaw) as string[];
+          } catch (error) {
+            existing = [];
+          }
+        }
+        const next = [...existing, ...memoryUpdate].slice(-memoryMaxItems);
+        await app.redis.set(memoryKey, JSON.stringify(next), "EX", memoryTtlSeconds);
+      }
+
+      const metric = await incrementUsage(payload.sub);
+      await app.redis.set(`usage:${payload.sub}:${metric.dateKey}`, JSON.stringify(metric), "EX", 60 * 60 * 24);
+
+      sendMessageCard(reply, cardResponse);
+    } catch (error) {
+      request.log.error({ error }, "Chat message failed");
+      sendMessageCard(reply, defaultCardResponse("hinglish"));
     }
-
-    const metric = await incrementUsage(payload.sub);
-    await app.redis.set(`usage:${payload.sub}:${metric.dateKey}`, JSON.stringify(metric), "EX", 60 * 60 * 24);
-
-    reply.raw.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive"
-    });
-    reply.raw.write(`data: ${JSON.stringify(cardResponse)}\n\n`);
-    reply.raw.end();
   });
 };
