@@ -270,7 +270,7 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       "Access-Control-Allow-Headers": "content-type",
       Vary: "Origin"
     });
-    reply.raw.write(`data: ${JSON.stringify({ mode: responseMode, card: cardResponse, text: responseMode === "text" ? textResponse : undefined })}\n\n`);
+    reply.raw.write(`data: ${JSON.stringify({ card: cardResponse })}\n\n`);
     reply.raw.write("data: {\"done\":true}\n\n");
     reply.raw.end();
   });
@@ -470,11 +470,7 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       "Cache-Control": "no-cache",
       Connection: "keep-alive"
     });
-    reply.raw.write(
-      `data: ${JSON.stringify(
-        responseMode === "text" ? { mode: "text", text: textResponse, card: cardResponse } : { mode: "cards", card: cardResponse }
-      )}\n\n`
-    );
+    reply.raw.write(`data: ${JSON.stringify(cardResponse)}\n\n`);
     reply.raw.end();
   });
 };
