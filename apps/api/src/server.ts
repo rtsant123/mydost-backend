@@ -15,6 +15,7 @@ import { registerTeerRoutes } from "./routes/teer";
 import { registerChatRoutes } from "./routes/chat";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerMarketRoutes } from "./routes/markets";
+import { registerDostRoutes } from "./routes/dost";
 
 export const buildServer = () => {
   const env = loadEnv();
@@ -74,6 +75,7 @@ export const buildServer = () => {
   registerChatRoutes(app);
   registerAdminRoutes(app);
   registerMarketRoutes(app);
+  registerDostRoutes(app);
 
   return app;
 };
