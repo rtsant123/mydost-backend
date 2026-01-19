@@ -99,4 +99,43 @@ export const registerAdminRoutes = (app: FastifyInstance) => {
 
     return reply.send({ status: "ok" });
   });
+
+  app.get("/api/admin/debug/status", async (request, reply) => {
+    try {
+      await request.jwtVerify();
+    } catch (error) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+    const payload = request.user as { email: string };
+    if (!isAdminEmail(app, payload.email)) {
+      return reply.status(403).send({ error: "Forbidden" });
+    }
+
+    const stockSymbols = app.env.MARKET_STOCK_SYMBOLS?.toUpperCase() ?? "";
+    const cacheKey = stockSymbols ? `markets:stocks:${stockSymbols}` : null;
+    const [cachedStocksRaw, ttlSeconds, matchCount, liveCount] = await Promise.all([
+      cacheKey ? app.redis.get(cacheKey) : Promise.resolve(null),
+      cacheKey ? app.redis.ttl(cacheKey) : Promise.resolve(-2),
+      prisma.match.count(),
+      prisma.match.count({ where: { status: { in: ["scheduled", "live"] } } })
+    ]);
+
+    return reply.send({
+      now: new Date().toISOString(),
+      stocks: {
+        symbols: stockSymbols,
+        cacheKey,
+        ttlSeconds,
+        cached: cachedStocksRaw ? JSON.parse(cachedStocksRaw) : null
+      },
+      sports: {
+        totalMatches: matchCount,
+        scheduledOrLive: liveCount
+      },
+      env: {
+        hasAlphaVantage: Boolean(app.env.ALPHA_VANTAGE_API_KEY),
+        hasSerper: Boolean(app.env.SERPER_API_KEY)
+      }
+    });
+  });
 };

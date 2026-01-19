@@ -108,6 +108,7 @@ export const fetchStockSnapshot = async (
   const cacheKey = stocksKey(symbols);
   const cached = await cacheGetJson<StockRow[]>(redis, cacheKey);
   if (cached && !options?.forceRefresh) return cached;
+  const cachedBySymbol = new Map(cached?.map((row) => [row.symbol, row]));
 
   const results: StockRow[] = [];
   for (const symbol of symbols) {
@@ -119,18 +120,18 @@ export const fetchStockSnapshot = async (
 
     const response = await fetch(url.toString());
     if (!response.ok) {
-      results.push({ symbol, price: null, change: null, changePercent: null });
+      results.push(cachedBySymbol.get(symbol) ?? { symbol, price: null, change: null, changePercent: null });
       continue;
     }
     const payload = (await response.json()) as Record<string, unknown>;
     if (payload["Note"] || payload["Error Message"] || payload["Information"]) {
-      results.push({ symbol, price: null, change: null, changePercent: null });
+      results.push(cachedBySymbol.get(symbol) ?? { symbol, price: null, change: null, changePercent: null });
       continue;
     }
 
     const quote = parseDailyQuote(payload);
     if (!quote) {
-      results.push({ symbol, price: null, change: null, changePercent: null });
+      results.push(cachedBySymbol.get(symbol) ?? { symbol, price: null, change: null, changePercent: null });
       continue;
     }
 

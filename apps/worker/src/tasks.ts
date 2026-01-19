@@ -82,6 +82,7 @@ const fetchStockSnapshot = async (redis: Redis, env: Env) => {
       cached = null;
     }
   }
+  const cachedBySymbol = new Map(cached?.map((row) => [row.symbol, row]));
 
   const results: Array<{ symbol: string; price: string | null; change: string | null; changePercent: string | null }> =
     [];
@@ -95,17 +96,17 @@ const fetchStockSnapshot = async (redis: Redis, env: Env) => {
 
     const response = await fetch(url.toString());
     if (!response.ok) {
-      results.push({ symbol, price: null, change: null, changePercent: null });
+      results.push(cachedBySymbol.get(symbol) ?? { symbol, price: null, change: null, changePercent: null });
       continue;
     }
     const payload = (await response.json()) as Record<string, unknown>;
     if (payload["Note"] || payload["Error Message"] || payload["Information"]) {
-      results.push({ symbol, price: null, change: null, changePercent: null });
+      results.push(cachedBySymbol.get(symbol) ?? { symbol, price: null, change: null, changePercent: null });
       continue;
     }
     const quote = parseDailyQuote(payload);
     if (!quote) {
-      results.push({ symbol, price: null, change: null, changePercent: null });
+      results.push(cachedBySymbol.get(symbol) ?? { symbol, price: null, change: null, changePercent: null });
       continue;
     }
     results.push({
