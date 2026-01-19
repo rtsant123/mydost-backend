@@ -55,6 +55,18 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     return parts.map((item) => item.trim()).filter(Boolean).join("\n");
   };
 
+  const toTextCardResponse = (text: string, language: any) => ({
+    cards: [
+      {
+        type: "answer" as const,
+        title: "Response",
+        confidence: 60,
+        bullets: [text.trim() || "Not available."]
+      }
+    ],
+    disclaimer: defaultCardResponse(language).disclaimer
+  });
+
   const buildMatchContext = async (matchId?: string) => {
     if (!matchId) return null;
     const match = await prisma.match.findUnique({ where: { id: matchId } });
@@ -223,13 +235,14 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     const responseMode = decideResponseMode(topic, userMessage);
     const cannedResponse = responseMode === "text" ? cannedSmallTalk(userMessage) : null;
 
-    let cardResponse = defaultCardResponse((query.language as any) ?? "hinglish");
+    const language = (query.language as any) ?? "hinglish";
+    let cardResponse = defaultCardResponse(language);
     let textResponse = cannedResponse ?? "Not available.";
 
     if (!cannedResponse) {
       const llmInput = {
         userMessage,
-        language: (query.language as any) ?? "hinglish",
+        language,
         context: contextChunks.join("\n\n"),
         maxTokens: 350,
         responseStyle: "short",
@@ -243,6 +256,10 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       textResponse = typeof response === "string" ? response : "Not available.";
     }
 
+    if (responseMode === "text") {
+      cardResponse = toTextCardResponse(textResponse, language);
+    }
+
     const origin = request.headers.origin ?? "*";
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -254,7 +271,7 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       Vary: "Origin"
     });
     reply.raw.write(
-      `data: ${JSON.stringify(responseMode === "cards" ? { mode: "cards", card: cardResponse } : { mode: "text", text: textResponse })}\n\n`
+      `data: ${JSON.stringify({ mode: responseMode, text: responseMode === "text" ? textResponse : undefined, card: cardResponse })}\n\n`
     );
     reply.raw.write("data: {\"done\":true}\n\n");
     reply.raw.end();
@@ -387,13 +404,14 @@ export const registerChatRoutes = (app: FastifyInstance) => {
     const responseMode = decideResponseMode(session.topic, parsed.data.message);
     const cannedResponse = responseMode === "text" ? cannedSmallTalk(parsed.data.message) : null;
 
-    let cardResponse = defaultCardResponse((prefs?.language as any) ?? "hinglish");
+    const language = (prefs?.language as any) ?? "hinglish";
+    let cardResponse = defaultCardResponse(language);
     let textResponse = cannedResponse ?? "Not available.";
 
     if (!cannedResponse) {
       const llmInput = {
         userMessage: parsed.data.message,
-        language: (prefs?.language as any) ?? "hinglish",
+        language,
         context: contextChunks.join("\n\n"),
         maxTokens: plan.maxTokens,
         responseStyle,
@@ -405,6 +423,10 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       const validated = responseMode === "cards" ? cardResponseSchema.safeParse(response) : null;
       cardResponse = validated?.success ? validated.data : defaultCardResponse(llmInput.language);
       textResponse = typeof response === "string" ? response : "Not available.";
+    }
+
+    if (responseMode === "text") {
+      cardResponse = toTextCardResponse(textResponse, language);
     }
 
     await prisma.chatMessage.create({
@@ -451,7 +473,7 @@ export const registerChatRoutes = (app: FastifyInstance) => {
       Connection: "keep-alive"
     });
     reply.raw.write(
-      `data: ${JSON.stringify(responseMode === "cards" ? cardResponse : { mode: "text", text: textResponse })}\n\n`
+      `data: ${JSON.stringify(responseMode === "text" ? { mode: "text", text: textResponse, card: cardResponse } : cardResponse)}\n\n`
     );
     reply.raw.end();
   });

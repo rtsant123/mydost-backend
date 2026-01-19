@@ -9,7 +9,7 @@ const stocksKey = (symbols: string[]) => `markets:stocks:${symbols.join(",")}`;
 type CryptoRow = { id: string; price: number | null; change24h: number | null };
 type StockRow = { symbol: string; price: string | null; change: string | null; changePercent: string | null };
 
-const STOCKS_INTRADAY_INTERVAL = "5min";
+const STOCKS_DAILY_FUNCTION = "TIME_SERIES_DAILY";
 const STOCKS_CACHE_TTL_SECONDS = 60 * 60 * 24;
 
 const parseList = (value: string) =>
@@ -23,8 +23,8 @@ const formatSigned = (value: number, decimals = 2) => {
   return value > 0 ? `+${fixed}` : fixed;
 };
 
-const parseIntradayQuote = (payload: Record<string, unknown>, interval: string) => {
-  const seriesKey = `Time Series (${interval})`;
+const parseDailyQuote = (payload: Record<string, unknown>) => {
+  const seriesKey = "Time Series (Daily)";
   const series = payload[seriesKey] as Record<string, Record<string, string>> | undefined;
   if (!series) return null;
   const timestamps = Object.keys(series);
@@ -112,9 +112,8 @@ export const fetchStockSnapshot = async (
   const results: StockRow[] = [];
   for (const symbol of symbols) {
     const url = new URL("https://www.alphavantage.co/query");
-    url.searchParams.set("function", "TIME_SERIES_INTRADAY");
+    url.searchParams.set("function", STOCKS_DAILY_FUNCTION);
     url.searchParams.set("symbol", symbol);
-    url.searchParams.set("interval", STOCKS_INTRADAY_INTERVAL);
     url.searchParams.set("outputsize", "compact");
     url.searchParams.set("apikey", apiKey);
 
@@ -129,7 +128,7 @@ export const fetchStockSnapshot = async (
       continue;
     }
 
-    const quote = parseIntradayQuote(payload, STOCKS_INTRADAY_INTERVAL);
+    const quote = parseDailyQuote(payload);
     if (!quote) {
       results.push({ symbol, price: null, change: null, changePercent: null });
       continue;

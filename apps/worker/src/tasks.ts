@@ -14,7 +14,7 @@ const formatIstDate = (date: Date) =>
 
 const stocksKey = (symbols: string[]) => `markets:stocks:${symbols.join(",")}`;
 const searchKey = (query: string) => `search:${hashKey(query.toLowerCase())}`;
-const STOCKS_INTRADAY_INTERVAL = "5min";
+const STOCKS_DAILY_FUNCTION = "TIME_SERIES_DAILY";
 const STOCKS_CACHE_TTL_SECONDS = 60 * 60 * 24;
 const RAG_MAX_SNIPPETS = 6;
 const RAG_MAX_SNIPPET_CHARS = 360;
@@ -32,8 +32,8 @@ const formatSigned = (value: number, decimals = 2) => {
   return value > 0 ? `+${fixed}` : fixed;
 };
 
-const parseIntradayQuote = (payload: Record<string, unknown>, interval: string) => {
-  const seriesKey = `Time Series (${interval})`;
+const parseDailyQuote = (payload: Record<string, unknown>) => {
+  const seriesKey = "Time Series (Daily)";
   const series = payload[seriesKey] as Record<string, Record<string, string>> | undefined;
   if (!series) return null;
   const timestamps = Object.keys(series);
@@ -88,9 +88,8 @@ const fetchStockSnapshot = async (redis: Redis, env: Env) => {
 
   for (const symbol of symbols) {
     const url = new URL("https://www.alphavantage.co/query");
-    url.searchParams.set("function", "TIME_SERIES_INTRADAY");
+    url.searchParams.set("function", STOCKS_DAILY_FUNCTION);
     url.searchParams.set("symbol", symbol);
-    url.searchParams.set("interval", STOCKS_INTRADAY_INTERVAL);
     url.searchParams.set("outputsize", "compact");
     url.searchParams.set("apikey", apiKey);
 
@@ -104,7 +103,7 @@ const fetchStockSnapshot = async (redis: Redis, env: Env) => {
       results.push({ symbol, price: null, change: null, changePercent: null });
       continue;
     }
-    const quote = parseIntradayQuote(payload, STOCKS_INTRADAY_INTERVAL);
+    const quote = parseDailyQuote(payload);
     if (!quote) {
       results.push({ symbol, price: null, change: null, changePercent: null });
       continue;
